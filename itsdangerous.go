@@ -19,8 +19,11 @@ func base64Encode(sig string) string {
 }
 
 func base64Decode(value string) string {
-	sig, _ := base64.URLEncoding.DecodeString(value)
-	return string(sig) + strings.Repeat("=", len(sig)%4)
+	sig, err := base64.URLEncoding.DecodeString(value + strings.Repeat("=", len(value)%4))
+	if err != nil {
+		log.Fatal(err)
+	}
+	return string(sig)
 }
 
 type SigningAlgorithm interface {

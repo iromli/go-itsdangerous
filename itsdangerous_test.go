@@ -11,3 +11,13 @@ func TestSignerSign(t *testing.T) {
 		t.Errorf("expecting %s, got %s instead", expected, actual)
 	}
 }
+
+func TestSignerUnsign(t *testing.T) {
+	s := NewSigner("secret-key", "", "", "", nil, nil)
+	expected := "my string"
+	actual, _ := s.Unsign("my string.wh6tMHxLgJqB6oY1uT73iMlyrOA")
+
+	if actual != expected {
+		t.Errorf("expecting %s, got %s instead", expected, actual)
+	}
+}
