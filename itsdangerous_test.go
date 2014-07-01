@@ -3,7 +3,7 @@ package itsdangerous
 import "testing"
 
 func TestSignerSign(t *testing.T) {
-	s := NewSigner("secret-key", "", "", "", nil)
+	s := NewSigner("secret-key", "", "", "", nil, nil)
 	expected := "my string.wh6tMHxLgJqB6oY1uT73iMlyrOA"
 	actual := s.Sign("my string")
 
