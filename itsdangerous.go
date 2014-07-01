@@ -18,8 +18,6 @@ import (
 // 2011/01/01 in UTC
 const EPOCH = 1293840000
 
-type Hash func() hash.Hash
-
 // Encodes a single string. The resulting string is safe for putting into URLs.
 func base64Encode(sig string) string {
 	s := base64.URLEncoding.EncodeToString([]byte(sig))
@@ -48,12 +46,12 @@ type SigningAlgorithm interface {
 
 // This struct provides signature generation using HMACs.
 type HMACAlgorithm struct {
-	DigestMethod Hash
+	DigestMethod hash.Hash
 }
 
 // Returns the signature for the given key and value.
 func (a *HMACAlgorithm) GetSignature(key, value string) string {
-	h := hmac.New(a.DigestMethod, []byte(key))
+	h := hmac.New(func() hash.Hash { return a.DigestMethod }, []byte(key))
 	h.Write([]byte(value))
 	return string(h.Sum(nil))
 }
@@ -80,7 +78,7 @@ type Signer struct {
 	Sep           string
 	Salt          string
 	KeyDerivation string
-	DigestMethod  Hash
+	DigestMethod  hash.Hash
 	Algorithm     SigningAlgorithm
 }
 
@@ -93,15 +91,15 @@ func (s *Signer) DeriveKey() (string, error) {
 
 	switch s.KeyDerivation {
 	case "concat":
-		h := s.DigestMethod()
+		h := s.DigestMethod
 		h.Write([]byte(s.Salt + s.SecretKey))
 		key, err = string(h.Sum(nil)), err
 	case "django-concat":
-		h := s.DigestMethod()
+		h := s.DigestMethod
 		h.Write([]byte(s.Salt + "signer" + s.SecretKey))
 		key, err = string(h.Sum(nil)), nil
 	case "hmac":
-		h := hmac.New(s.DigestMethod, []byte(s.SecretKey))
+		h := hmac.New(func() hash.Hash { return s.DigestMethod }, []byte(s.SecretKey))
 		h.Write([]byte(s.Salt))
 		key, err = string(h.Sum(nil)), nil
 	case "none":
@@ -152,7 +150,7 @@ func (s *Signer) Unsign(signed string) (string, error) {
 	return "", errors.New(fmt.Sprintf("Signature %s does not match", sig))
 }
 
-func NewSigner(secret, salt, sep, derivation string, digest Hash, algo SigningAlgorithm) *Signer {
+func NewSigner(secret, salt, sep, derivation string, digest hash.Hash, algo SigningAlgorithm) *Signer {
 	if salt == "" {
 		salt = "itsdangerous.Signer"
 	}
@@ -163,7 +161,7 @@ func NewSigner(secret, salt, sep, derivation string, digest Hash, algo SigningAl
 		derivation = "django-concat"
 	}
 	if digest == nil {
-		digest = sha1.New
+		digest = sha1.New()
 	}
 	if algo == nil {
 		algo = &HMACAlgorithm{DigestMethod: digest}
@@ -228,7 +226,7 @@ func (s *TimestampSigner) Unsign(value string, maxAge uint32) (string, error) {
 	return val, nil
 }
 
-func NewTimestampSigner(secret, salt, sep, derivation string, digest Hash, algo SigningAlgorithm) *TimestampSigner {
+func NewTimestampSigner(secret, salt, sep, derivation string, digest hash.Hash, algo SigningAlgorithm) *TimestampSigner {
 	signer := NewSigner(secret, salt, sep, derivation, digest, algo)
 	return &TimestampSigner{Signer: *signer}
 }
