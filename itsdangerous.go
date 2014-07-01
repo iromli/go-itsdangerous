@@ -20,11 +20,13 @@ const EPOCH = 1293840000
 
 type Hash func() hash.Hash
 
+// Encodes a single string. The resulting string is safe for putting into URLs.
 func base64Encode(sig string) string {
 	s := base64.URLEncoding.EncodeToString([]byte(sig))
 	return strings.Trim(s, "=")
 }
 
+// Decodes a single string.
 func base64Decode(value string) string {
 	sig, err := base64.URLEncoding.DecodeString(value + strings.Repeat("=", len(value)%4))
 	if err != nil {
@@ -33,6 +35,8 @@ func base64Decode(value string) string {
 	return string(sig)
 }
 
+// Returns the current timestamp.  This implementation returns the
+// seconds since 1/1/2011.
 func getTimestamp() uint32 {
 	return uint32(time.Now().Unix() - EPOCH)
 }
@@ -80,11 +84,9 @@ type Signer struct {
 	Algorithm     SigningAlgorithm
 }
 
-// This method is called to derive the key.  If you're unhappy with
-// the default key derivation choices you can override them here.
-// Keep in mind that the key derivation in itsdangerous is not intended
-// to be used as a security method to make a complex key out of a short
-// password.  Instead you should use large random secret keys.
+// Derives the key. Keep in mind that the key derivation in itsdangerous is not intended
+// to be used as a security method to make a complex key out of a short password.
+// Instead you should use large random secret keys.
 func (s *Signer) DeriveKey() (string, error) {
 	var key string
 	var err error
@@ -150,29 +152,29 @@ func (s *Signer) Unsign(signed string) (string, error) {
 	return "", errors.New(fmt.Sprintf("Signature %s does not match", sig))
 }
 
-func NewSigner(secretKey, salt, sep, keyDerivation string, digestMethod Hash, algorithm SigningAlgorithm) *Signer {
+func NewSigner(secret, salt, sep, derivation string, digest Hash, algo SigningAlgorithm) *Signer {
 	if salt == "" {
 		salt = "itsdangerous.Signer"
 	}
 	if sep == "" {
 		sep = "."
 	}
-	if keyDerivation == "" {
-		keyDerivation = "django-concat"
+	if derivation == "" {
+		derivation = "django-concat"
 	}
-	if digestMethod == nil {
-		digestMethod = sha1.New
+	if digest == nil {
+		digest = sha1.New
 	}
-	if algorithm == nil {
-		algorithm = &HMACAlgorithm{DigestMethod: digestMethod}
+	if algo == nil {
+		algo = &HMACAlgorithm{DigestMethod: digest}
 	}
 	return &Signer{
-		SecretKey:     secretKey,
+		SecretKey:     secret,
 		Salt:          salt,
 		Sep:           sep,
-		KeyDerivation: keyDerivation,
-		DigestMethod:  digestMethod,
-		Algorithm:     algorithm,
+		KeyDerivation: derivation,
+		DigestMethod:  digest,
+		Algorithm:     algo,
 	}
 }
 
@@ -183,9 +185,11 @@ type TimestampSigner struct {
 // Signs the given string.
 func (s *TimestampSigner) Sign(value string) string {
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, getTimestamp())
+	err := binary.Write(buf, binary.BigEndian, getTimestamp())
+	if err != nil {
+		log.Fatal(err)
+	}
 	ts := base64Encode(string(buf.Bytes()))
-
 	val := value + s.Sep + ts
 	return val + s.Sep + s.GetSignature(val)
 }
@@ -211,7 +215,7 @@ func (s *TimestampSigner) Unsign(value string, maxAge uint32) (string, error) {
 	err = binary.Read(buf, binary.BigEndian, &timestamp)
 
 	if err != nil {
-		return "", err
+		log.Fatal(err)
 	}
 
 	if maxAge > 0 {
@@ -224,7 +228,7 @@ func (s *TimestampSigner) Unsign(value string, maxAge uint32) (string, error) {
 	return val, nil
 }
 
-func NewTimestampSigner(secretKey, salt, sep, keyDerivation string, digestMethod Hash, algorithm SigningAlgorithm) *TimestampSigner {
-	signer := NewSigner(secretKey, salt, sep, keyDerivation, digestMethod, algorithm)
+func NewTimestampSigner(secret, salt, sep, derivation string, digest Hash, algo SigningAlgorithm) *TimestampSigner {
+	signer := NewSigner(secret, salt, sep, derivation, digest, algo)
 	return &TimestampSigner{Signer: *signer}
 }
