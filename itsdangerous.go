@@ -1,15 +1,22 @@
 package itsdangerous
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha1"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"hash"
 	"log"
 	"strings"
+	"time"
 )
+
+// 2011/01/01 in UTC
+const EPOCH = 1293840000
 
 type Hash func() hash.Hash
 
@@ -24,6 +31,10 @@ func base64Decode(value string) string {
 		log.Fatal(err)
 	}
 	return string(sig)
+}
+
+func getTimestamp() uint32 {
+	return uint32(time.Now().Unix() - EPOCH)
 }
 
 type SigningAlgorithm interface {
@@ -126,11 +137,17 @@ func (s *Signer) Sign(value string) string {
 
 // Unsigns the given string.
 func (s *Signer) Unsign(signed string) (string, error) {
-	p := strings.SplitN(signed, s.Sep, 2)
-	if s.VerifySignature(p[0], p[1]) {
-		return p[0], nil
+	if !strings.Contains(signed, s.Sep) {
+		return "", errors.New(fmt.Sprintf("No %s found in value", s.Sep))
 	}
-	return "", errors.New("Signature does not match")
+
+	li := strings.LastIndex(signed, s.Sep)
+	value, sig := signed[:li], signed[li+len(s.Sep):]
+
+	if s.VerifySignature(value, sig) {
+		return value, nil
+	}
+	return "", errors.New(fmt.Sprintf("Signature %s does not match", sig))
 }
 
 func NewSigner(secretKey, salt, sep, keyDerivation string, digestMethod Hash, algorithm SigningAlgorithm) *Signer {
@@ -157,4 +174,57 @@ func NewSigner(secretKey, salt, sep, keyDerivation string, digestMethod Hash, al
 		DigestMethod:  digestMethod,
 		Algorithm:     algorithm,
 	}
+}
+
+type TimestampSigner struct {
+	Signer
+}
+
+// Signs the given string.
+func (s *TimestampSigner) Sign(value string) string {
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.BigEndian, getTimestamp())
+	ts := base64Encode(string(buf.Bytes()))
+
+	val := value + s.Sep + ts
+	return val + s.Sep + s.GetSignature(val)
+}
+
+// Unsigns the given string.
+func (s *TimestampSigner) Unsign(value string, maxAge uint32) (string, error) {
+	var timestamp uint32
+
+	result, err := s.Signer.Unsign(value)
+	if err != nil {
+		return "", err
+	}
+	// If there is no timestamp in the result there is something
+	// seriously wrong.
+	if !strings.Contains(result, s.Sep) {
+		return "", errors.New("Timestamp missing")
+	}
+
+	li := strings.LastIndex(result, s.Sep)
+	val, ts := result[:li], result[li+len(s.Sep):]
+
+	buf := bytes.NewReader([]byte(base64Decode(ts)))
+	err = binary.Read(buf, binary.BigEndian, &timestamp)
+
+	if err != nil {
+		return "", err
+	}
+
+	if maxAge > 0 {
+		age := getTimestamp() - timestamp
+		if age > maxAge {
+			return "", errors.New(fmt.Sprintf("Signature age %d > %d seconds", age, maxAge))
+		}
+	}
+
+	return val, nil
+}
+
+func NewTimestampSigner(secretKey, salt, sep, keyDerivation string, digestMethod Hash, algorithm SigningAlgorithm) *TimestampSigner {
+	signer := NewSigner(secretKey, salt, sep, keyDerivation, digestMethod, algorithm)
+	return &TimestampSigner{Signer: *signer}
 }
