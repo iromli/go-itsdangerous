@@ -11,7 +11,7 @@ func assert(t *testing.T, actual, expected string) {
 func TestSignerSign(t *testing.T) {
 	s := NewSigner("secret-key", "", "", "", nil, nil)
 	expected := "my string.wh6tMHxLgJqB6oY1uT73iMlyrOA"
-	actual := s.Sign("my string")
+	actual, _ := s.Sign("my string")
 	assert(t, actual, expected)
 }
 

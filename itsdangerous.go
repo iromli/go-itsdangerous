@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"log"
 	"strings"
 	"time"
 )
@@ -25,12 +24,12 @@ func base64Encode(sig string) string {
 }
 
 // Decodes a single string.
-func base64Decode(value string) string {
-	sig, err := base64.URLEncoding.DecodeString(value + strings.Repeat("=", len(value)%4))
+func base64Decode(value string) (string, error) {
+	b, err := base64.URLEncoding.DecodeString(value + strings.Repeat("=", len(value)%4))
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
-	return string(sig)
+	return string(b), nil
 }
 
 // Returns the current timestamp.  This implementation returns the
@@ -93,17 +92,17 @@ func (s *Signer) DeriveKey() (string, error) {
 	case "concat":
 		h := s.DigestMethod
 		h.Write([]byte(s.Salt + s.SecretKey))
-		key, err = string(h.Sum(nil)), err
+		key = string(h.Sum(nil))
 	case "django-concat":
 		h := s.DigestMethod
 		h.Write([]byte(s.Salt + "signer" + s.SecretKey))
-		key, err = string(h.Sum(nil)), nil
+		key = string(h.Sum(nil))
 	case "hmac":
 		h := hmac.New(func() hash.Hash { return s.DigestMethod }, []byte(s.SecretKey))
 		h.Write([]byte(s.Salt))
-		key, err = string(h.Sum(nil)), nil
+		key = string(h.Sum(nil))
 	case "none":
-		key, err = s.SecretKey, nil
+		key = s.SecretKey
 	default:
 		key, err = "", errors.New("Unknown key derivation method")
 	}
@@ -111,28 +110,40 @@ func (s *Signer) DeriveKey() (string, error) {
 }
 
 // Returns the signature for the given value.
-func (s *Signer) GetSignature(value string) string {
+func (s *Signer) GetSignature(value string) (string, error) {
+	var sig string
+	var err error
+
 	key, err := s.DeriveKey()
 	if err != nil {
-		log.Fatal(err)
+		return sig, err
 	}
-	sig := s.Algorithm.GetSignature(key, value)
-	return base64Encode(sig)
+
+	sig = s.Algorithm.GetSignature(key, value)
+	return base64Encode(sig), err
 }
 
 // Verifies the signature for the given value.
-func (s *Signer) VerifySignature(value, sig string) bool {
+func (s *Signer) VerifySignature(value, sig string) (bool, error) {
 	key, err := s.DeriveKey()
 	if err != nil {
-		log.Fatal(err)
+		return false, err
 	}
-	signed := base64Decode(sig)
-	return s.Algorithm.VerifySignature(key, value, signed)
+
+	signed, err := base64Decode(sig)
+	if err != nil {
+		return false, err
+	}
+	return s.Algorithm.VerifySignature(key, value, signed), nil
 }
 
 // Signs the given string.
-func (s *Signer) Sign(value string) string {
-	return value + s.Sep + s.GetSignature(value)
+func (s *Signer) Sign(value string) (string, error) {
+	sig, err := s.GetSignature(value)
+	if err != nil {
+		return "", err
+	}
+	return value + s.Sep + sig, nil
 }
 
 // Unsigns the given string.
@@ -144,7 +155,7 @@ func (s *Signer) Unsign(signed string) (string, error) {
 	li := strings.LastIndex(signed, s.Sep)
 	value, sig := signed[:li], signed[li+len(s.Sep):]
 
-	if s.VerifySignature(value, sig) {
+	if ok, _ := s.VerifySignature(value, sig); ok == true {
 		return value, nil
 	}
 	return "", errors.New(fmt.Sprintf("Signature %s does not match", sig))
@@ -181,15 +192,21 @@ type TimestampSigner struct {
 }
 
 // Signs the given string.
-func (s *TimestampSigner) Sign(value string) string {
+func (s *TimestampSigner) Sign(value string) (string, error) {
 	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.BigEndian, getTimestamp())
-	if err != nil {
-		log.Fatal(err)
+
+	if err := binary.Write(buf, binary.BigEndian, getTimestamp()); err != nil {
+		return "", err
 	}
+
 	ts := base64Encode(string(buf.Bytes()))
 	val := value + s.Sep + ts
-	return val + s.Sep + s.GetSignature(val)
+
+	sig, err := s.GetSignature(val)
+	if err != nil {
+		return "", err
+	}
+	return val + s.Sep + sig, nil
 }
 
 // Unsigns the given string.
@@ -200,8 +217,8 @@ func (s *TimestampSigner) Unsign(value string, maxAge uint32) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// If there is no timestamp in the result there is something
-	// seriously wrong.
+
+	// If there is no timestamp in the result there is something seriously wrong.
 	if !strings.Contains(result, s.Sep) {
 		return "", errors.New("Timestamp missing")
 	}
@@ -209,20 +226,21 @@ func (s *TimestampSigner) Unsign(value string, maxAge uint32) (string, error) {
 	li := strings.LastIndex(result, s.Sep)
 	val, ts := result[:li], result[li+len(s.Sep):]
 
-	buf := bytes.NewReader([]byte(base64Decode(ts)))
-	err = binary.Read(buf, binary.BigEndian, &timestamp)
-
+	sig, err := base64Decode(ts)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
+	}
+
+	buf := bytes.NewReader([]byte(sig))
+	if err = binary.Read(buf, binary.BigEndian, &timestamp); err != nil {
+		return "", err
 	}
 
 	if maxAge > 0 {
-		age := getTimestamp() - timestamp
-		if age > maxAge {
+		if age := getTimestamp() - timestamp; age > maxAge {
 			return "", errors.New(fmt.Sprintf("Signature age %d > %d seconds", age, maxAge))
 		}
 	}
-
 	return val, nil
 }
 
