@@ -50,6 +50,7 @@ type HMACAlgorithm struct {
 
 // Returns the signature for the given key and value.
 func (a *HMACAlgorithm) GetSignature(key, value string) []byte {
+	a.DigestMethod.Reset()
 	h := hmac.New(func() hash.Hash { return a.DigestMethod }, []byte(key))
 	h.Write([]byte(value))
 	return h.Sum(nil)
@@ -87,6 +88,8 @@ type Signer struct {
 func (s *Signer) DeriveKey() (string, error) {
 	var key string
 	var err error
+
+	s.DigestMethod.Reset()
 
 	switch s.KeyDerivation {
 	case "concat":
