@@ -1,3 +1,10 @@
+/*
+Package itsdangerous implements various functions to deal with untrusted sources.
+Mainly useful for web applications.
+
+This package exists purely as a port of https://github.com/mitsuhiko/itsdangerous,
+where the original version is written in Python.
+*/
 package itsdangerous
 
 import (
@@ -38,17 +45,18 @@ func getTimestamp() uint32 {
 	return uint32(time.Now().Unix() - EPOCH)
 }
 
+// SigningAlgorithm provides interfaces to generate and verify signature
 type SigningAlgorithm interface {
 	GetSignature(key, value string) []byte
 	VerifySignature(key, value string, sig []byte) bool
 }
 
-// This struct provides signature generation using HMACs.
+// HMACAlgorithm provides signature generation using HMACs.
 type HMACAlgorithm struct {
 	DigestMethod hash.Hash
 }
 
-// Returns the signature for the given key and value.
+// GetSignature returns the signature for the given key and value.
 func (a *HMACAlgorithm) GetSignature(key, value string) []byte {
 	a.DigestMethod.Reset()
 	h := hmac.New(func() hash.Hash { return a.DigestMethod }, []byte(key))
@@ -56,23 +64,31 @@ func (a *HMACAlgorithm) GetSignature(key, value string) []byte {
 	return h.Sum(nil)
 }
 
-// Verifies the given signature matches the expected signature.
+// VerifySignature verifies the given signature matches the expected signature.
 func (a *HMACAlgorithm) VerifySignature(key, value string, sig []byte) bool {
 	eq := subtle.ConstantTimeCompare(sig, []byte(a.GetSignature(key, value)))
 	return eq == 1
 }
 
-// This struct provides an algorithm that does not perform any
+// NoneAlgorithm provides an algorithm that does not perform any
 // signing and returns an empty signature.
 type NoneAlgorithm struct {
 	HMACAlgorithm
 }
 
-// Returns the signature for the given key and value.
+// GetSignature returns the signature for the given key and value.
 func (a *NoneAlgorithm) GetSignature(key, value string) []byte {
 	return []byte("")
 }
 
+// Signer can sign bytes and unsign it and validate the signature
+// provided.
+//
+// Salt can be used to namespace the hash, so that a signed string is only
+// valid for a given namespace.  Leaving this at the default value or re-using
+// a salt value across different parts of your application where the same
+// signed value in one part can mean something different in another part
+// is a security risk.
 type Signer struct {
 	SecretKey     string
 	Sep           string
@@ -82,8 +98,8 @@ type Signer struct {
 	Algorithm     SigningAlgorithm
 }
 
-// Derives the key. Keep in mind that the key derivation in itsdangerous is not intended
-// to be used as a security method to make a complex key out of a short password.
+// DeriveKey generates a key derivation. Keep in mind that the key derivation in itsdangerous
+// is not intended to be used as a security method to make a complex key out of a short password.
 // Instead you should use large random secret keys.
 func (s *Signer) DeriveKey() (string, error) {
 	var key string
@@ -107,12 +123,12 @@ func (s *Signer) DeriveKey() (string, error) {
 	case "none":
 		key = s.SecretKey
 	default:
-		key, err = "", errors.New("Unknown key derivation method")
+		key, err = "", errors.New("unknown key derivation method")
 	}
 	return key, err
 }
 
-// Returns the signature for the given value.
+// GetSignature returns the signature for the given value.
 func (s *Signer) GetSignature(value string) (string, error) {
 	key, err := s.DeriveKey()
 	if err != nil {
@@ -123,7 +139,7 @@ func (s *Signer) GetSignature(value string) (string, error) {
 	return base64Encode(sig), err
 }
 
-// Verifies the signature for the given value.
+// VerifySignature verifies the signature for the given value.
 func (s *Signer) VerifySignature(value, sig string) (bool, error) {
 	key, err := s.DeriveKey()
 	if err != nil {
@@ -137,7 +153,7 @@ func (s *Signer) VerifySignature(value, sig string) (bool, error) {
 	return s.Algorithm.VerifySignature(key, value, signed), nil
 }
 
-// Signs the given string.
+// Sign the given string.
 func (s *Signer) Sign(value string) (string, error) {
 	sig, err := s.GetSignature(value)
 	if err != nil {
@@ -146,10 +162,10 @@ func (s *Signer) Sign(value string) (string, error) {
 	return value + s.Sep + sig, nil
 }
 
-// Unsigns the given string.
+// Unsign the given string.
 func (s *Signer) Unsign(signed string) (string, error) {
 	if !strings.Contains(signed, s.Sep) {
-		return "", errors.New(fmt.Sprintf("No %s found in value", s.Sep))
+		return "", fmt.Errorf("No %s found in value", s.Sep)
 	}
 
 	li := strings.LastIndex(signed, s.Sep)
@@ -158,9 +174,10 @@ func (s *Signer) Unsign(signed string) (string, error) {
 	if ok, _ := s.VerifySignature(value, sig); ok == true {
 		return value, nil
 	}
-	return "", errors.New(fmt.Sprintf("Signature %s does not match", sig))
+	return "", fmt.Errorf("Signature %s does not match", sig)
 }
 
+// NewSigner creates a new TimestampSigner
 func NewSigner(secret, salt, sep, derivation string, digest hash.Hash, algo SigningAlgorithm) *Signer {
 	if salt == "" {
 		salt = "itsdangerous.Signer"
@@ -187,11 +204,13 @@ func NewSigner(secret, salt, sep, derivation string, digest hash.Hash, algo Sign
 	}
 }
 
+// TimestampSigner works like the regular Signer but also records the time
+// of the signing and can be used to expire signatures.
 type TimestampSigner struct {
 	Signer
 }
 
-// Signs the given string.
+// Sign the given string.
 func (s *TimestampSigner) Sign(value string) (string, error) {
 	buf := new(bytes.Buffer)
 
@@ -209,7 +228,7 @@ func (s *TimestampSigner) Sign(value string) (string, error) {
 	return val + s.Sep + sig, nil
 }
 
-// Unsigns the given string.
+// Unsign the given string.
 func (s *TimestampSigner) Unsign(value string, maxAge uint32) (string, error) {
 	var timestamp uint32
 
@@ -220,7 +239,7 @@ func (s *TimestampSigner) Unsign(value string, maxAge uint32) (string, error) {
 
 	// If there is no timestamp in the result there is something seriously wrong.
 	if !strings.Contains(result, s.Sep) {
-		return "", errors.New("Timestamp missing")
+		return "", errors.New("timestamp missing")
 	}
 
 	li := strings.LastIndex(result, s.Sep)
@@ -238,12 +257,13 @@ func (s *TimestampSigner) Unsign(value string, maxAge uint32) (string, error) {
 
 	if maxAge > 0 {
 		if age := getTimestamp() - timestamp; age > maxAge {
-			return "", errors.New(fmt.Sprintf("Signature age %d > %d seconds", age, maxAge))
+			return "", fmt.Errorf("Signature age %d > %d seconds", age, maxAge)
 		}
 	}
 	return val, nil
 }
 
+// NewTimestampSigner creates a new TimestampSigner
 func NewTimestampSigner(secret, salt, sep, derivation string, digest hash.Hash, algo SigningAlgorithm) *TimestampSigner {
 	signer := NewSigner(secret, salt, sep, derivation, digest, algo)
 	return &TimestampSigner{Signer: *signer}
