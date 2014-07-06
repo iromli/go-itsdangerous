@@ -18,18 +18,18 @@ import (
 const EPOCH = 1293840000
 
 // Encodes a single string. The resulting string is safe for putting into URLs.
-func base64Encode(sig string) string {
-	s := base64.URLEncoding.EncodeToString([]byte(sig))
+func base64Encode(src []byte) string {
+	s := base64.URLEncoding.EncodeToString(src)
 	return strings.Trim(s, "=")
 }
 
 // Decodes a single string.
-func base64Decode(value string) (string, error) {
-	b, err := base64.URLEncoding.DecodeString(value + strings.Repeat("=", len(value)%4))
+func base64Decode(s string) ([]byte, error) {
+	b, err := base64.URLEncoding.DecodeString(s + strings.Repeat("=", len(s)%4))
 	if err != nil {
-		return "", err
+		return []byte(""), err
 	}
-	return string(b), nil
+	return b, nil
 }
 
 // Returns the current timestamp.  This implementation returns the
@@ -39,8 +39,8 @@ func getTimestamp() uint32 {
 }
 
 type SigningAlgorithm interface {
-	GetSignature(key, value string) string
-	VerifySignature(key, value, sig string) bool
+	GetSignature(key, value string) []byte
+	VerifySignature(key, value string, sig []byte) bool
 }
 
 // This struct provides signature generation using HMACs.
@@ -49,15 +49,15 @@ type HMACAlgorithm struct {
 }
 
 // Returns the signature for the given key and value.
-func (a *HMACAlgorithm) GetSignature(key, value string) string {
+func (a *HMACAlgorithm) GetSignature(key, value string) []byte {
 	h := hmac.New(func() hash.Hash { return a.DigestMethod }, []byte(key))
 	h.Write([]byte(value))
-	return string(h.Sum(nil))
+	return h.Sum(nil)
 }
 
 // Verifies the given signature matches the expected signature.
-func (a *HMACAlgorithm) VerifySignature(key, value, sig string) bool {
-	eq := subtle.ConstantTimeCompare([]byte(sig), []byte(a.GetSignature(key, value)))
+func (a *HMACAlgorithm) VerifySignature(key, value string, sig []byte) bool {
+	eq := subtle.ConstantTimeCompare(sig, []byte(a.GetSignature(key, value)))
 	return eq == 1
 }
 
@@ -68,8 +68,8 @@ type NoneAlgorithm struct {
 }
 
 // Returns the signature for the given key and value.
-func (a *NoneAlgorithm) GetSignature(key, value string) string {
-	return ""
+func (a *NoneAlgorithm) GetSignature(key, value string) []byte {
+	return []byte("")
 }
 
 type Signer struct {
@@ -111,15 +111,12 @@ func (s *Signer) DeriveKey() (string, error) {
 
 // Returns the signature for the given value.
 func (s *Signer) GetSignature(value string) (string, error) {
-	var sig string
-	var err error
-
 	key, err := s.DeriveKey()
 	if err != nil {
-		return sig, err
+		return "", err
 	}
 
-	sig = s.Algorithm.GetSignature(key, value)
+	sig := s.Algorithm.GetSignature(key, value)
 	return base64Encode(sig), err
 }
 
@@ -199,7 +196,7 @@ func (s *TimestampSigner) Sign(value string) (string, error) {
 		return "", err
 	}
 
-	ts := base64Encode(string(buf.Bytes()))
+	ts := base64Encode(buf.Bytes())
 	val := value + s.Sep + ts
 
 	sig, err := s.GetSignature(val)
