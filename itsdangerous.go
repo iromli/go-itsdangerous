@@ -165,7 +165,7 @@ func (s *Signer) Sign(value string) (string, error) {
 // Unsign the given string.
 func (s *Signer) Unsign(signed string) (string, error) {
 	if !strings.Contains(signed, s.Sep) {
-		return "", fmt.Errorf("No %s found in value", s.Sep)
+		return "", fmt.Errorf("no %s found in value", s.Sep)
 	}
 
 	li := strings.LastIndex(signed, s.Sep)
@@ -174,7 +174,7 @@ func (s *Signer) Unsign(signed string) (string, error) {
 	if ok, _ := s.VerifySignature(value, sig); ok == true {
 		return value, nil
 	}
-	return "", fmt.Errorf("Signature %s does not match", sig)
+	return "", fmt.Errorf("signature %s does not match", sig)
 }
 
 // NewSigner creates a new TimestampSigner
@@ -257,7 +257,7 @@ func (s *TimestampSigner) Unsign(value string, maxAge uint32) (string, error) {
 
 	if maxAge > 0 {
 		if age := getTimestamp() - timestamp; age > maxAge {
-			return "", fmt.Errorf("Signature age %d > %d seconds", age, maxAge)
+			return "", fmt.Errorf("signature age %d > %d seconds", age, maxAge)
 		}
 	}
 	return val, nil
