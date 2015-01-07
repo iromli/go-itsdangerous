@@ -79,17 +79,6 @@ func (a *HMACAlgorithm) VerifySignature(key, value string, sig []byte) bool {
 	return eq == 1
 }
 
-// NoneAlgorithm provides an algorithm that does not perform any
-// signing and returns an empty signature.
-type NoneAlgorithm struct {
-	HMACAlgorithm
-}
-
-// GetSignature returns the signature for the given key and value.
-func (a *NoneAlgorithm) GetSignature(key, value string) []byte {
-	return []byte("")
-}
-
 // Signer can sign bytes and unsign it and validate the signature
 // provided.
 //
