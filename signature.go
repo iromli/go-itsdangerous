@@ -134,7 +134,7 @@ func NewSignature(secret, salt, sep, derivation string, digest hash.Hash, algo S
 	}
 }
 
-// TimestampSignature works like the regular Signer but also records the time
+// TimestampSignature works like the regular Signature but also records the time
 // of the signing and can be used to expire signatures.
 type TimestampSignature struct {
 	Signature
