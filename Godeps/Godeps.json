@@ -1,0 +1,5 @@
+{
+	"ImportPath": "github.com/iromli/go-itsdangerous",
+	"GoVersion": "go1.3.3",
+	"Deps": []
+}

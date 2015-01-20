@@ -22,3 +22,5 @@ _testmain.go
 *.exe
 *.test
 _vendor
+.coverage.out
+Godeps/_workspace
