@@ -14,13 +14,13 @@ type SigningAlgorithm interface {
 
 // HMACAlgorithm provides signature generation using HMACs.
 type HMACAlgorithm struct {
-	DigestMethod hash.Hash
+	DigestMethod func() hash.Hash
 }
 
 // GetSignature returns the signature for the given key and value.
 func (a *HMACAlgorithm) GetSignature(key, value string) []byte {
-	a.DigestMethod.Reset()
-	h := hmac.New(func() hash.Hash { return a.DigestMethod }, []byte(key))
+	a.DigestMethod().Reset()
+	h := hmac.New(func() hash.Hash { return a.DigestMethod() }, []byte(key))
 	h.Write([]byte(value))
 	return h.Sum(nil)
 }

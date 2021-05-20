@@ -24,7 +24,7 @@ type Signature struct {
 	Sep           string
 	Salt          string
 	KeyDerivation string
-	DigestMethod  hash.Hash
+	DigestMethod  func() hash.Hash
 	Algorithm     SigningAlgorithm
 }
 
@@ -35,19 +35,19 @@ func (s *Signature) DeriveKey() (string, error) {
 	var key string
 	var err error
 
-	s.DigestMethod.Reset()
+	s.DigestMethod().Reset()
 
 	switch s.KeyDerivation {
 	case "concat":
-		h := s.DigestMethod
+		h := s.DigestMethod()
 		h.Write([]byte(s.Salt + s.SecretKey))
 		key = string(h.Sum(nil))
 	case "django-concat":
-		h := s.DigestMethod
+		h := s.DigestMethod()
 		h.Write([]byte(s.Salt + "signer" + s.SecretKey))
 		key = string(h.Sum(nil))
 	case "hmac":
-		h := hmac.New(func() hash.Hash { return s.DigestMethod }, []byte(s.SecretKey))
+		h := hmac.New(func() hash.Hash { return s.DigestMethod() }, []byte(s.SecretKey))
 		h.Write([]byte(s.Salt))
 		key = string(h.Sum(nil))
 	case "none":
@@ -108,7 +108,7 @@ func (s *Signature) Unsign(signed string) (string, error) {
 }
 
 // NewSignature creates a new Signature
-func NewSignature(secret, salt, sep, derivation string, digest hash.Hash, algo SigningAlgorithm) *Signature {
+func NewSignature(secret, salt, sep, derivation string, digest func() hash.Hash, algo SigningAlgorithm) *Signature {
 	if salt == "" {
 		salt = "itsdangerous.Signer"
 	}
@@ -119,7 +119,7 @@ func NewSignature(secret, salt, sep, derivation string, digest hash.Hash, algo S
 		derivation = "django-concat"
 	}
 	if digest == nil {
-		digest = sha1.New()
+		digest = sha1.New
 	}
 	if algo == nil {
 		algo = &HMACAlgorithm{DigestMethod: digest}
@@ -194,7 +194,7 @@ func (s *TimestampSignature) Unsign(value string, maxAge uint32) (string, error)
 }
 
 // NewTimestampSignature creates a new TimestampSignature
-func NewTimestampSignature(secret, salt, sep, derivation string, digest hash.Hash, algo SigningAlgorithm) *TimestampSignature {
+func NewTimestampSignature(secret, salt, sep, derivation string, digest func() hash.Hash, algo SigningAlgorithm) *TimestampSignature {
 	s := NewSignature(secret, salt, sep, derivation, digest, algo)
 	return &TimestampSignature{Signature: *s}
 }
